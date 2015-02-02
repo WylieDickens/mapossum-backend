@@ -1,0 +1,198 @@
+<br>
+Welcome to the Mapossum Services API below is API doc
+<br>
+<br>
+<h1>List of Methods:</h1>
+
+<h2>/verify</h2>
+<div style="padding-left:30">
+
+<h3>requires:</h3>
+
+email<br>
+password<br>
+
+<h3>returns if successful:</h3>
+
+last<br>
+first<br>
+userid<br>
+affiliation<br>
+email<br>
+location (as text)<br>
+
+<h3>returns if unsuccessful:</h3>
+
+email: will be empty string<br>
+userid: -1<br>
+message: "user not found"<br>
+<br>
+</div>
+
+<h2>/adduser</h2>
+<div style="padding-left:30">
+<h3>requires:</h3>
+
+email<br>
+password<br>
+affiliation<br>
+first <br>
+last <br>
+location (wkt, LAT LON 4326 WGS84) default is: Point(39.828127 -98.579404) (center of US)<br>
+
+<h3>returns if successful:</h3>
+
+last<br>
+first<br>
+userid<br>
+affiliation<br>
+email<br>
+location (as text) <br>
+success (True)<br>
+
+<h3>returns if unsuccessful:</h3>
+
+success (False)<br>
+
+
+<br>
+</div>
+
+<h2>/updateuser</h2>
+<div style="padding-left:30">
+<h3>requires: (All values except userid are NEW) </h3>
+
+email <br>
+password <br>
+affiliation <br>
+first <br>
+last <br>
+location <br>
+userid <br>
+
+<h3>returns if successful:</h3>
+
+last<br>
+first<br>
+userid<br>
+affiliation<br>
+email<br>
+location (as text) <br>
+success (True)<br>
+
+<h3>returns if unsuccessful:</h3>
+
+success (False) <br>
+</div>
+
+<h2>/addquestion</h2>
+<div style="padding-left:30">
+<h3>requires:  </h3>
+
+userid <br>
+question <br>
+
+<h3>optional: </h3>
+
+type: string, valid values are category,multiple,ordinal,numeric (multiple is default, category is same as multiple but allows "other")<br>
+hashtag: default is an empty string<br>
+
+<h3>returns if successful:</h3>
+
+userid <br>
+qid <br>
+question <br>
+hashtag <br>
+type <br>
+success <br>
+
+<h3>returns if unsuccessful:</h3>
+
+success (False) <br>
+</div>
+
+
+<h2>/addanswer</h2>
+<div style="padding-left:30">
+<h3>requires:  </h3>
+
+qid <br>
+answer <br>
+
+<h3>optional: </h3>
+
+color: string, can be rgb(XX,XX,XX) or #XXXXXX format <br>
+
+<h3>returns if successful:</h3>
+
+qid <br>
+answer <br> 
+answerid <br>
+color <br>
+
+<h3>returns if unsuccessful:</h3>
+
+success (False) <br>
+</div>
+
+
+<h2>/addresponse</h2>
+<div style="padding-left:30">
+<h3>requires:  </h3>
+
+qid <br>
+answerid (Not technically required but highly recommended (especially with multiple choice questions) <br>
+response (Only required if answerid is not given)<br>
+location as WKT LAT LONG WGS84<br>
+
+<h3>returns if successful:</h3>
+
+qid <br> 
+answerid <br>
+response <br> 
+location as WKT LAT LONG <br>
+
+<h3>returns if unsuccessful:</h3>
+
+success (False) <br>
+</div>
+
+
+<h2>/getanswers</h2>
+<div style="padding-left:30">
+<h3>requires:  </h3>
+
+qid <br>
+
+
+<h3>returns if successful:</h3>
+
+data (a json table of the answers, this table now also includes the number of time each question has been answered.)
+
+<h3>returns if unsuccessful:</h3>
+
+success (False) <br>
+</div>
+
+
+<h2>/getquestions</h2>
+<div style="padding-left:30">
+<h3>requires:  </h3>
+
+count: a number representing the limit of questions default is 10<br>
+minutes: a number representing the number of minutes from the moment of request that you would like to get questions from<br>
+
+<h3>optional</h3>
+hasanswers: default false, if true will only return those questions that have answers.  Will also return the count (number of answers).  Any value besides true is considered false.
+
+
+<h3>returns if successful:</h3>
+
+data (a json table of the questions with fields userid, question, type, hashtag, qid, and created)
+
+<h3>returns if unsuccessful:</h3>
+
+success (False) <br>
+</div>
+
+
