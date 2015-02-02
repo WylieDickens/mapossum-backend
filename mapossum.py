@@ -9,7 +9,7 @@ import base64, zipfile, sys
 import cStringIO
 import os.path
 import random
-#import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont
 import cStringIO
 import math
 import sched, time
@@ -17,8 +17,6 @@ import datetime
 
 with open('db.config', 'r') as content_file:
     dbcs = content_file.read()
-
-print dbcs
 
 maptypedic = {"subs":"states_prov", "counties":"counties","countries":"countries", "points": "", "watercolor": ""}
 from flask.ext.cors import CORS
