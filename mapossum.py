@@ -20,6 +20,7 @@ with open('db.config', 'r') as content_file:
 
 maptypedic = {"subs":"states_prov", "counties":"counties","countries":"countries", "points": "", "watercolor": ""}
 from flask.ext.cors import CORS
+from flask.ext.cors import cross_origin
 
 def getcallback(req):
     callback = req.args.get(']callback')
@@ -149,6 +150,7 @@ def addquestion():
         userid = getvalue(request,'userid')
         question = getvalue(request,'question')
         qtype = getvalue(request,'type', 'multiple')
+        hidden = getvalue(request,'hidden', 'FALSE')
         hashtag = getvalue(request, 'hashtag', '')
         explain = getvalue(request, 'explain', '')
     except:
@@ -158,7 +160,7 @@ def addquestion():
     conn = psycopg2.connect(dbcs)
     #cur = conn.cursor()
     cur = conn.cursor(cursor_factory = psycopg2.extras.RealDictCursor)
-    cur.execute("INSERT INTO questions (userid, question, type, hashtag, explain) VALUES (" + userid + ", '" + question + "', '" + qtype + "', '" + hashtag + "', '" + explain + "') RETURNING userid, question, type, hashtag, qid, explain;")
+    cur.execute("INSERT INTO questions (userid, question, type, hashtag, explain, hidden) VALUES (" + userid + ", '" + question + "', '" + qtype + "', '" + hashtag + "', '" + explain + "', " + hidden +") RETURNING userid, question, type, hashtag, qid, explain;")
     outq = cur.fetchone()
     conn.commit()
     cur.close()
@@ -289,9 +291,12 @@ def getanswers():
 def getquestions():
     callback = getcallback(request)
     try:
-        count = getvalue(request,'count', "10")
+        count = getvalue(request,'count', "25")
         minutes = getvalue(request,'minutes', "2000000000")
-        
+        hidden = getvalue(request,'hidden', "False")
+        current = getvalue(request,'current', "1")
+        searchPhrase = getvalue(request,'searchPhrase', "")
+        #sort = getvalue(request, , "")
         
     except:
         return wrapcallback(callback,{"success":False, "message":" is required"})
@@ -301,7 +306,10 @@ def getquestions():
     qids = getvalue(request,'qids', "")
     
     users = getvalue(request,'users', "")
-    
+
+    offset = 0
+    if (count != "ALL"):
+        offset = int(count) * (current - 1)
     
     mins = long(minutes)
     if (mins > 2000000000):
@@ -320,7 +328,7 @@ def getquestions():
      
     conn = psycopg2.connect(dbcs)
     cur = conn.cursor(cursor_factory = psycopg2.extras.RealDictCursor)
-    cur.execute("select * from (select userid, question, type, hashtag, qid, COALESCE(explain, '') as explain, to_char(created, 'YYYY-MM-DD HH24:MI:SS') as created from questions where (created > now() - interval '" + minutes + " minute' "+ qids + users + ")) a " + ending + " order by created DESC limit " + count + ";")
+    cur.execute("select * from (select userid, question, type, hashtag, qid, COALESCE(explain, '') as explain, to_char(created, 'YYYY-MM-DD HH24:MI:SS') as created from questions where hidden = " + hidden + " AND (created > now() - interval '" + minutes + " minute' "+ qids + users + ")) a " + ending + " order by created DESC limit " + count + " offset " + offset + ";")
     outq = cur.fetchall()
 
 #    if (qids != ""):
@@ -559,9 +567,9 @@ def legend(qid):
     pixdata = img.load()
     
     for y in xrange(img.size[1]):
-    	for x in xrange(img.size[0]):
-             if pixdata[x, y][3] == 255:
-                  pixdata[x, y] = (pixdata[x, y][0],pixdata[x, y][1],pixdata[x, y][2],trans)
+        for x in xrange(img.size[0]):
+            if pixdata[x, y][3] == 255:
+                pixdata[x, y] = (pixdata[x, y][0],pixdata[x, y][1],pixdata[x, y][2],trans)
 
     draw = ImageDraw.Draw(img)
 
