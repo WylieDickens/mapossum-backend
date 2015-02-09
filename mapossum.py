@@ -56,7 +56,7 @@ def wrapcallback(callback,outputdata):
 
 application = Flask(__name__)
 application.config['CORS_ALLOW_HEADERS'] = "Content-Type"
-CORS(application)
+CORS(application, resources={r"/*": {"origins": "*"}})
 
 @application.route("/")
 def hello():
@@ -309,7 +309,7 @@ def getquestions():
 
     offset = 0
     if (count != "ALL"):
-        offset = int(count) * (current - 1)
+        offset = int(count) * (int(current) - 1)
     
     mins = long(minutes)
     if (mins > 2000000000):
@@ -325,10 +325,18 @@ def getquestions():
         
     if (users != ""):
         users = " " + logic + " userid in (" + users + ")"
+
+    SQLMeat = "from questions where hidden = " + hidden + " AND (created > now() - interval '" + minutes + " minute' "+ qids + users + ")) a " + ending
      
     conn = psycopg2.connect(dbcs)
     cur = conn.cursor(cursor_factory = psycopg2.extras.RealDictCursor)
-    cur.execute("select * from (select userid, question, type, hashtag, qid, COALESCE(explain, '') as explain, to_char(created, 'YYYY-MM-DD HH24:MI:SS') as created from questions where hidden = " + hidden + " AND (created > now() - interval '" + minutes + " minute' "+ qids + users + ")) a " + ending + " order by created DESC limit " + count + " offset " + offset + ";")
+    #get total
+    cur.execute("select * from (select count(userid) " + SQLMeat + ";")
+    outtotq = cur.fetchone()
+    total = outtotq["count"]
+    
+    cur.execute("select * from (select userid, question, type, hashtag, qid, COALESCE(explain, '') as explain, to_char(created, 'YYYY-MM-DD HH24:MI:SS') as created " + SQLMeat + " order by created DESC limit " + count + " offset " + str(offset) + ";")
+    
     outq = cur.fetchall()
 
 #    if (qids != ""):
@@ -349,6 +357,8 @@ def getquestions():
     outdata = {}
     outdata['success'] = True
     outdata['data'] = outq
+    outdata['current'] = int(current)
+    outdata['total'] = int(total)
     return wrapcallback(callback,outdata)
 
 @application.route("/getextent/<qid>", methods=['GET', 'POST'])
