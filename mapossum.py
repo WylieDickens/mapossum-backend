@@ -326,7 +326,7 @@ def getquestions():
     if (users != ""):
         users = " " + logic + " userid in (" + users + ")"
 
-    SQLMeat = "from questions where hidden = " + hidden + " AND (created > now() - interval '" + minutes + " minute' "+ qids + users + ")) a " + ending
+    SQLMeat = "from questions where LOWER(question) LIKE LOWER('%" + searchPhrase + "%') AND hidden = " + hidden + " AND (created > now() - interval '" + minutes + " minute' "+ qids + users + ")) a " + ending
      
     conn = psycopg2.connect(dbcs)
     cur = conn.cursor(cursor_factory = psycopg2.extras.RealDictCursor)
@@ -360,6 +360,34 @@ def getquestions():
     outdata['current'] = int(current)
     outdata['total'] = int(total)
     return wrapcallback(callback,outdata)
+
+@application.route("/getreponses" , methods=['GET', 'POST'])
+def getreponses():
+    callback = getcallback(request)
+    try:
+        qid = getvalue(request,'qid')
+    except:
+        return wrapcallback(callback,{"success":False, "message":"question (QID) is required"})
+   
+    rformat = getvalue(request,'format', "csv")
+
+    query = "select ST_Y(location) as latitude, ST_X(location) as longitude, response, to_char(responded,'YYYY MM DD') as day, to_char(responded,'HH24:MI:SS') as time from responses where qid = " + qid
+    outputquery = "COPY ({0}) TO STDOUT WITH CSV HEADER".format(query)
+    
+    conn = psycopg2.connect(dbcs)
+    cur = conn.cursor(cursor_factory = psycopg2.extras.RealDictCursor)
+    output = cStringIO.StringIO()
+    cur.copy_expert(outputquery, output)
+    a = output.read()
+    #cur.execute(outputquery)
+    #outtotq = cur.fetchall()
+    cur.close()
+    conn.close()
+    
+    return a #wrapcallback(callback,a)
+  
+        
+    
 
 @application.route("/getextent/<qid>", methods=['GET', 'POST'])
 @application.route("/getextent/<qid>/<maptype>", methods=['GET', 'POST'])
