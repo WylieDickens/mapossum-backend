@@ -1,6 +1,7 @@
 from flask import Flask
 from flask import request
 from flask import send_file
+from flask import Response
 import psycopg2
 import psycopg2.extras
 import json
@@ -14,8 +15,16 @@ import cStringIO
 import math
 import sched, time
 import datetime
+import base64
 
-with open('db.config', 'r') as content_file:
+try:
+    spath = os.path.dirname(os.path.realpath(__file__))
+except:
+    spath = os.path.dirname(os.path.realpath("__file__"))
+print spath
+
+
+with open(spath + r'/db.config', 'r') as content_file:
     dbcs = content_file.read()
 
 maptypedic = {"subs":"states_prov", "counties":"counties","countries":"countries", "points": "", "watercolor": ""}
@@ -49,7 +58,7 @@ def getvalue(req,key,default = None):
 
 def wrapcallback(callback,outputdata):
     if (callback == ""):
-     return json.dumps(outputdata)
+         return json.dumps(outputdata)
     else:
          return callback + "(" + json.dumps(outputdata) + ")"  
 
@@ -60,7 +69,7 @@ CORS(application, resources={r"/*": {"origins": "*"}})
 
 @application.route("/")
 def hello():
-    f = open('methods.html', 'r')
+    f = open(spath + r'/methods.html', 'r')
     m = f.read()
     return m
     
@@ -150,7 +159,6 @@ def addquestion():
         userid = getvalue(request,'userid')
         question = getvalue(request,'question')
         qtype = getvalue(request,'type', 'multiple')
-        hidden = getvalue(request,'hidden', 'FALSE')
         hashtag = getvalue(request, 'hashtag', '')
         explain = getvalue(request, 'explain', '')
     except:
@@ -160,7 +168,7 @@ def addquestion():
     conn = psycopg2.connect(dbcs)
     #cur = conn.cursor()
     cur = conn.cursor(cursor_factory = psycopg2.extras.RealDictCursor)
-    cur.execute("INSERT INTO questions (userid, question, type, hashtag, explain, hidden) VALUES (" + userid + ", '" + question + "', '" + qtype + "', '" + hashtag + "', '" + explain + "', " + hidden +") RETURNING userid, question, type, hashtag, qid, explain;")
+    cur.execute("INSERT INTO questions (userid, question, type, hashtag, explain) VALUES (" + userid + ", '" + question + "', '" + qtype + "', '" + hashtag + "', '" + explain + "') RETURNING userid, question, type, hashtag, qid, explain;")
     outq = cur.fetchone()
     conn.commit()
     cur.close()
@@ -316,25 +324,45 @@ def getquestions():
          minutes = "2000000000"
     
     if (ha == "true"):
-         ending = ' join (select count(qid), qid from answers group by qid) b on a.qid = b.qid'
+         ending = ' join (select count(qid), qid as cqid from answers group by qid) b on a.qid = b.cqid'
     else:
          ending = ''
-    
+
+    qidsText = ""
     if (qids != ""):
-        qids = " " + logic + " qid in (" + qids + ")"
+        qidsText = " " + logic + " qid in (" + qids + ")"
         
     if (users != ""):
         users = " " + logic + " userid in (" + users + ")"
 
-    SQLMeat = "from questions where LOWER(question) LIKE LOWER('%" + searchPhrase + "%') AND hidden = " + hidden + " AND (created > now() - interval '" + minutes + " minute' "+ qids + users + ")) a " + ending
+    if (hidden == "False"):
+        hidText = "AND hidden = " + hidden
+    else:
+        hidText = ""
+
+    SQLMeat = "from questions where LOWER(question) LIKE LOWER('%" + searchPhrase + "%') " + hidText + " AND (created > now() - interval '" + minutes + " minute') "+ qidsText + users + ") a " + ending
      
     conn = psycopg2.connect(dbcs)
     cur = conn.cursor(cursor_factory = psycopg2.extras.RealDictCursor)
     #get total
-    cur.execute("select * from (select count(userid) " + SQLMeat + ";")
+
+    cur.execute("select count(qid) from (select * from (select qid " + SQLMeat + ") as foo;")
     outtotq = cur.fetchone()
     total = outtotq["count"]
     
+    if (qids != ""):
+        firstq = qids.split(",")[0]
+        cur.execute("select qnum from (select qid, qid = " + firstq + " as tq, row_number() over(order by created DESC) as qnum,  to_char(created, 'YYYY-MM-DD HH24:MI:SS') as created " + SQLMeat + " where tq = true")
+        outqnum = cur.fetchone()
+        qnum = outqnum["qnum"]
+        current = str(int(math.ceil(float(qnum) / float(count))))
+        offset = int(count) * (int(current) - 1)
+        #print "**************", current, qnum, count, offset
+        
+    
+
+
+    #print "select * from (select userid, question, type, hashtag, qid, COALESCE(explain, '') as explain, to_char(created, 'YYYY-MM-DD HH24:MI:SS') as created " + SQLMeat + " order by created DESC limit " + count + " offset " + str(offset) + ";"
     cur.execute("select * from (select userid, question, type, hashtag, qid, COALESCE(explain, '') as explain, to_char(created, 'YYYY-MM-DD HH24:MI:SS') as created " + SQLMeat + " order by created DESC limit " + count + " offset " + str(offset) + ";")
     
     outq = cur.fetchall()
@@ -361,33 +389,39 @@ def getquestions():
     outdata['total'] = int(total)
     return wrapcallback(callback,outdata)
 
-@application.route("/getreponses" , methods=['GET', 'POST'])
-def getreponses():
+@application.route("/download/<inqid>" , methods=['GET', 'POST'])
+def getreponses(inqid):
     callback = getcallback(request)
-    try:
-        qid = getvalue(request,'qid')
-    except:
-        return wrapcallback(callback,{"success":False, "message":"question (QID) is required"})
-   
-    rformat = getvalue(request,'format', "csv")
+
+    qidinfo = inqid.split(".")
+    qid = qidinfo[0]
+    rformat = qidinfo[1]
+    
+    #rformat = getvalue(request,'format', "csv")
 
     query = "select ST_Y(location) as latitude, ST_X(location) as longitude, response, to_char(responded,'YYYY MM DD') as day, to_char(responded,'HH24:MI:SS') as time from responses where qid = " + qid
     outputquery = "COPY ({0}) TO STDOUT WITH CSV HEADER".format(query)
+
+    #print query
     
     conn = psycopg2.connect(dbcs)
     cur = conn.cursor(cursor_factory = psycopg2.extras.RealDictCursor)
     output = cStringIO.StringIO()
     cur.copy_expert(outputquery, output)
+    output.seek(0)
     a = output.read()
+    #print a
+
+    #encoded = base64.b64encode(a)
+    
     #cur.execute(outputquery)
     #outtotq = cur.fetchall()
     cur.close()
     conn.close()
-    
-    return a #wrapcallback(callback,a)
-  
-        
-    
+    #return a
+    return Response(a, mimetype='text/csv')
+    #return wrapcallback(callback,encoded)
+     #wrapcallback(callback,a)
 
 @application.route("/getextent/<qid>", methods=['GET', 'POST'])
 @application.route("/getextent/<qid>/<maptype>", methods=['GET', 'POST'])
@@ -443,23 +477,23 @@ def setupmaps():
     cur.close()
     conn.close()
     
-    directory = "/home/graber/mapossum/qidmaps/" + qid
+    directory = spath + "/qidmaps/" + qid
     
     if (len(outq) > 0):
     
-         f = open('/home/graber/mapossum/qidmaps/template.cfg', 'r')
+         f = open(spath + '/qidmaps/template.cfg', 'r')
          m = f.read()
          f.close()
          m = m.replace("%%qid%%", qid)
          
-         f = open('/home/graber/mapossum/qidmaps/' + qid + '.cfg', 'w')
+         f = open(spath + '/qidmaps/' + qid + '.cfg', 'w')
          f.write(m)
          f.close()
          
          if not os.path.exists(directory):
               os.makedirs(directory)
 
-         f = open('/home/graber/mapossum/qidmaps/markers/markertemplate.xml', 'r')
+         f = open(spath + '/qidmaps/markers/markertemplate.xml', 'r')
          mt = f.read()
          f.close()
             
@@ -468,7 +502,7 @@ def setupmaps():
          msymbolstring = symbolstring
          for sym in outq:
               im = drawp(sym["color"])
-              imageloc = "/home/graber/mapossum/qidmaps/markers/" + sym["color"] + ".png"
+              imageloc = spath + "/qidmaps/markers/" + sym["color"] + ".png"
               im.save(imageloc)
               cmt = mt.replace("%%responsetext%%", sym["answer"]).replace("%%responsecolor%%", imageloc)
               msymbolstring = msymbolstring + cmt
@@ -485,10 +519,10 @@ def setupmaps():
          msymbolstring = msymbolstring + '</Style>\n' 
          
          maptypes = []              
-         for file in os.listdir("/home/graber/mapossum/qidmaps/templates"):
+         for file in os.listdir(spath + "/qidmaps/templates"):
               if (file[0:2] != "._"):
                    print file
-                   f = open('/home/graber/mapossum/qidmaps/templates/' + file, 'r')
+                   f = open(spath + '/qidmaps/templates/' + file, 'r')
                    m = f.read()
                    f.close()
                    m = m.replace("%%markersymbol%%", psymbolstring)
@@ -496,7 +530,7 @@ def setupmaps():
                    m = m.replace("%%wmarkersymbol%%", msymbolstring)
                    m = m.replace("%%qid%%", qid)
          
-                   f = open('/home/graber/mapossum/qidmaps/' + qid + "/" + file, 'w')
+                   f = open(spath + '/qidmaps/' + qid + "/" + file, 'w')
                    f.write(m)
                    f.close()
                    
@@ -588,7 +622,7 @@ def legend(qid):
     cur.close()
     conn.close()
 
-    font = ImageFont.truetype("/home/graber/mapossum/fonts/trebuchet.ttf", 35)
+    font = ImageFont.truetype(spath + "/fonts/trebuchet.ttf", 35)
     im = Image.new("RGBA", (2,2), "white")
     draw = ImageDraw.Draw(im)
 	
@@ -598,16 +632,14 @@ def legend(qid):
         cz = draw.textsize(q['answer'] , font=font)
         if (cz[0] > maxl):
            maxl = cz[0]
-    #print maxl
-		
+
     img = Image.new("RGBA", (maxl + 90, (c * 50) + 10), bgcolor)
     
     pixdata = img.load()
-    
+
     for y in xrange(img.size[1]):
         for x in xrange(img.size[0]):
-            if pixdata[x, y][3] == 255:
-                pixdata[x, y] = (pixdata[x, y][0],pixdata[x, y][1],pixdata[x, y][2],trans)
+            if pixdata[x, y][3] == 255:pixdata[x, y] = (pixdata[x, y][0],pixdata[x, y][1],pixdata[x, y][2],trans)
 
     draw = ImageDraw.Draw(img)
 
